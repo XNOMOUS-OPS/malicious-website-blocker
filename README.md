@@ -73,9 +73,13 @@ Here is the simple step-by-step workflow of how the tool works:
      VT_API_KEY=your_virustotal_api_key_here
      ```
 
-3. **Start the container:**
+3. **Build and run the Docker container:**
    ```bash
-   docker compose up -d --build
+   # Build the image
+   docker build -t malicious-website-blocker .
+
+   # Run the container
+   docker run -d -p 5000:5000 --env-file .env -v ${PWD}/logs:/app/logs -v ${PWD}/data:/app/data --name malicious_blocker malicious-website-blocker
    ```
 
 4. **Open in browser:**
@@ -116,7 +120,6 @@ Here is the simple step-by-step workflow of how the tool works:
 │   └── index.html               # Web dashboard interface
 ├── requirements.txt             # Python libraries needed
 ├── Dockerfile                   # Docker container build instructions
-├── docker-compose.yml           # Docker compose file
 ├── .env.example                 # Example configuration file
 └── README.md                    # Project documentation
 ```
