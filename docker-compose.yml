@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  malicious-website-blocker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: malicious_blocker_siem
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - VT_API_KEY=${VT_API_KEY:-YOUR_API_KEY}
+      - REDIRECT_IP=127.0.0.1
+      - LOG_DIR=/app/logs
+      - DATA_DIR=/app/data
+      - SIEM_SYSLOG_HOST=${SIEM_SYSLOG_HOST:-}
+      - SIEM_SYSLOG_PORT=${SIEM_SYSLOG_PORT:-514}
+      - SIEM_SYSLOG_PROTOCOL=${SIEM_SYSLOG_PROTOCOL:-UDP}
+    volumes:
+      # Persistent logs (for Splunk forwarder, Filebeat, Wazuh agent ingestion)
+      - ./logs:/app/logs
+      # Persistent blocklist data and sinkhole exports
+      - ./data:/app/data

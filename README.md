@@ -1,190 +1,280 @@
-# 🛡️ Malicious Website Blocker
+# 🛡️ Malicious Website Blocker & SIEM Threat Intel Hub
 
-A Python desktop application that lets you **block, unblock, and scan websites** for malicious content — with VirusTotal integration and hosts-file-based blocking.
+A cybersecurity endpoint and network defense project that identifies malicious URLs using VirusTotal v3 Threat Intelligence, enforces DNS/Hosts sinkholing, and generates structured SIEM security logs (**CEF**, **JSON RFC 5424**, and **Syslog**) for SOC ingestion (Splunk, Elastic/ELK, Wazuh, Graylog).
+
+Supports both **Docker container deployment** (with Web SOC Dashboard & REST API) and **Standalone Desktop execution** (Tkinter GUI).
 
 ---
 
 ## 📋 Table of Contents
 
-- [Features](#features)
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Configuration](#configuration)
-- [How to Use](#how-to-use)
-- [How It Works](#how-it-works)
-- [Logging](#logging)
-- [Limitations & Notes](#limitations--notes)
-- [Troubleshooting](#troubleshooting)
+- [Project Architecture](#-project-architecture)
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Quickstart with Docker (Recommended)](#-quickstart-with-docker-recommended)
+- [Running Desktop GUI Locally](#-running-desktop-gui-locally)
+- [SIEM Integration Lab Guide](#-siem-integration-lab-guide)
+  - [1. Elastic Stack (ELK / Filebeat)](#1-elastic-stack-elk--filebeat)
+  - [2. Wazuh Agent Integration](#2-wazuh-agent-integration)
+  - [3. Splunk Universal Forwarder / CEF Ingest](#3-splunk-universal-forwarder--cef-ingest)
+- [Sample SIEM Event Logs](#-sample-siem-event-logs)
+- [REST API Endpoints](#-rest-api-endpoints)
+- [MITRE ATT&CK Mapping](#-mitre-attck-mapping)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
+## 🏗️ Project Architecture
+
+```
+                                  ┌─────────────────────────────┐
+                                  │   VirusTotal v3 Cloud API   │
+                                  └──────────────▲──────────────┘
+                                                 │
+                                                 │ (Threat Intel Query)
+                                                 ▼
+┌──────────────────┐               ┌───────────────────────────┐
+│   Web SOC UI     │◄─────────────►│    Core Detection Engine  │
+│ (http://:5000)   │  REST API     │    (core_blocker.py)      │
+└──────────────────┘               └─────────────┬─────────────┘
+                                                 │
+                   ┌─────────────────────────────┼─────────────────────────────┐
+                   ▼                             ▼                             ▼
+       ┌───────────────────────┐    ┌─────────────────────────┐   ┌─────────────────────────┐
+       │   Hosts Sinkhole /    │    │  Structured JSON Logs   │   │     CEF / Syslog Stream │
+       │   Pi-hole Blocklist   │    │  (logs/siem_events.json)│   │   (RFC 5424 to SIEM)    │
+       └───────────────────────┘    └────────────┬────────────┘   └────────────┬────────────┘
+                                                 │                             │
+                                                 ▼                             ▼
+                                    ┌─────────────────────────┐   ┌─────────────────────────┐
+                                    │    Wazuh / Filebeat     │   │   Splunk / QRadar /     │
+                                    │      (Elasticsearch)    │   │         Graylog         │
+                                    └─────────────────────────┘   └─────────────────────────┘
+```
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
-|---|---|
-| 🚫 Block Website | Adds a domain to your system `hosts` file, redirecting it to `127.0.0.1` |
-| ✅ Unblock Website | Removes the domain from your `hosts` file |
-| 🔬 Scan with VirusTotal | Submits the URL to VirusTotal API and auto-blocks if flagged malicious/suspicious |
-| 📋 View Blocked Sites | Live list of all currently blocked sites managed by this app |
-| 📝 Logging | Every block/unblock action is timestamped and saved to `log.txt` |
+- **Automated Threat Intelligence**: Submits suspicious URLs to VirusTotal API v3 and evaluates threat scores (malicious/suspicious detection ratios).
+- **Automated Remediation & Sinkholing**: Automatically diverts malicious domains to `127.0.0.1` locally or exports standard sinkhole lists for Pi-hole/dnsmasq/AdGuard.
+- **Enterprise SIEM Security Event Generation**:
+  - **Structured JSON (ECS-aligned)** for Elasticsearch, Wazuh, and Graylog.
+  - **Common Event Format (CEF)** for ArcSight, Splunk, and QRadar.
+  - **Network Syslog Forwarding** (UDP/TCP direct transmission).
+- **Web SOC Dashboard**: Dark-themed cybersecurity analyst dashboard with live scanner, blocklist management, and real-time SIEM audit stream.
+- **REST API**: Clean endpoints for automation, SOAR playbooks, and external security tooling.
+- **Container Ready**: Packaged for Docker and Docker Compose with health checks and volume persistence.
+- **Legacy Desktop Compatibility**: Original desktop GUI script (`Block_malicious_website.py`) remains fully functional with added SIEM logging.
 
 ---
 
-## 🖥️ Requirements
+## 🖥️ Prerequisites
 
-- **Python** 3.7 or higher
-- **Operating System**: Windows, macOS, or Linux
-- **Admin/Root privileges** (required to edit the hosts file)
-- A **VirusTotal API Key** (free tier available at [virustotal.com](https://www.virustotal.com))
+- **Docker & Docker Compose** (for containerized mode) OR **Python 3.8+** (for desktop GUI).
+- A free **VirusTotal API Key** (register at [virustotal.com](https://www.virustotal.com)).
+- Optional: Local SIEM lab instance (Wazuh, Elastic, Splunk, or Graylog).
 
-### Python Dependencies
+---
 
-Install required packages with:
+## 🐳 Quickstart with Docker (Recommended)
+
+### 1. Clone Repository & Setup Environment
 
 ```bash
-pip install requests
+git clone https://github.com/XNOMOUS-OPS/malicious-website-blocker.git
+cd malicious-website-blocker
+cp .env.example .env
 ```
 
-> `tkinter` is included in the Python standard library. If it's missing on Linux, install it with:
-> ```bash
-> sudo apt install python3-tk
-> ```
+Edit `.env` and insert your VirusTotal API key:
+```env
+VT_API_KEY=your_actual_virustotal_api_key_here
+PORT=5000
+```
+
+### 2. Launch with Docker Compose
+
+```bash
+docker compose up -d --build
+```
+
+### 3. Access the SOC Dashboard
+
+Open your web browser and navigate to:
+```
+http://localhost:5000
+```
+
+- Submit any URL (e.g. `http://malicious-test-site.com`) to run threat analysis.
+- If flagged, the domain is auto-blocked and dispatched to `logs/siem_events.json` and `logs/siem_events.log`.
+- Download the DNS Sinkhole export file via the dashboard or `/api/blocklist/export`.
+
+To stop the container:
+```bash
+docker compose down
+```
 
 ---
 
-## 🚀 Installation
+## 💻 Running Desktop GUI Locally
 
-1. **Clone or download** this repository:
+If you prefer using the desktop Tkinter application:
+
+1. Install requirements:
    ```bash
-   git clone https://github.com/XNOMOUS-OPS/malicious-website-blocker.git
-   cd malicious-website-blocker
+   pip install -r requirements.txt
    ```
 
-2. **Install dependencies**:
+2. Configure your API key in `.env` or set as environment variable:
    ```bash
-   pip install requests
+   # Windows (PowerShell)
+   $env:VT_API_KEY="your_api_key"
+
+   # Linux / macOS
+   export VT_API_KEY="your_api_key"
    ```
 
-3. **Add your VirusTotal API key** (see [Configuration](#configuration) below).
-
-4. **Run the app**:
-
-   - **Windows** — Right-click the script and choose *Run as Administrator*, or run from an elevated command prompt:
+3. Run the script with Administrator / root privileges (needed to edit the system `hosts` file):
+   - **Windows**: Run Command Prompt or PowerShell as Administrator:
      ```bash
      python Block_malicious_website.py
      ```
-     > On Windows, the app will automatically prompt for administrator privileges via a UAC dialog.
-
-   - **macOS / Linux** — Run with `sudo`:
+   - **Linux / macOS**:
      ```bash
      sudo python3 Block_malicious_website.py
      ```
 
 ---
 
-## ⚙️ Configuration
+## 📡 SIEM Integration Lab Guide
 
-Open `Block_malicious_website.py` and replace the placeholder with your VirusTotal API key:
+The blocker writes structured logs to the `./logs/` directory mounted on the host machine.
 
-```python
-VT_API_KEY = "YOUR_API_KEY"   # <-- Replace this
+### 1. Elastic Stack (ELK / Filebeat)
+
+Add the following input configuration to your `filebeat.yml` to ingest events into Elasticsearch:
+
+```yaml
+filebeat.inputs:
+  - type: filestream
+    id: malicious-blocker-events
+    enabled: true
+    paths:
+      - /path/to/malicious-website-blocker/logs/siem_events.json
+    parsers:
+      - ndjson:
+          target: ""
+          overwrite_keys: true
+          add_error_key: true
+
+output.elasticsearch:
+  hosts: ["http://localhost:9200"]
+  index: "soc-malicious-blocker-%{+yyyy.MM.dd}"
 ```
 
-To get a free API key:
-1. Sign up at [https://www.virustotal.com](https://www.virustotal.com)
-2. Go to your profile → **API Key**
-3. Copy and paste it into the script
+### 2. Wazuh Agent Integration
 
----
+Add this snippet to `/var/ossec/etc/ossec.conf` on the endpoint running the blocker:
 
-## 📖 How to Use
-
-### 1. Block a Website Manually
-
-1. Launch the application.
-2. Enter a URL in the **"Website URL"** field (e.g., `http://malicious-site.com` or just `malicious-site.com`).
-3. Click **"Block Website"**.
-4. The domain is immediately added to your hosts file and appears in the **Currently Blocked Sites** list.
-
-### 2. Unblock a Website
-
-1. Enter the URL of a previously blocked site in the **"Website URL"** field.
-2. Click **"Unblock Website"**.
-3. The domain is removed from your hosts file.
-
-### 3. Scan with VirusTotal
-
-1. Enter any URL in the **"Website URL"** field.
-2. Click **"Scan with VirusTotal"**.
-3. A dialog box will inform you that scanning has started (takes ~20 seconds).
-4. Results are displayed showing detection counts (malicious, suspicious, harmless, etc.).
-5. **If the site is flagged**, it is **automatically blocked** and logged.
-6. **If the site is clean**, you'll see a ✅ confirmation.
-
-### 4. View Blocked Sites
-
-The **"Currently Blocked Sites"** listbox at the bottom of the window shows all sites currently blocked via this app (entries pointing to `127.0.0.1` in the hosts file). This list refreshes automatically after every block/unblock action.
-
----
-
-## ⚙️ How It Works
-
-```
-User enters URL
-      │
-      ▼
-Domain extracted from URL
-      │
-      ├──[Block]──► Appends "127.0.0.1  domain" to hosts file
-      │
-      ├──[Unblock]──► Removes matching lines from hosts file
-      │
-      └──[VT Scan]──► POST to VirusTotal API
-                           │
-                           ▼
-                    Poll for results (up to 5 times, ~20s)
-                           │
-                    ┌──────┴──────┐
-               Malicious?        Clean?
-                    │                │
-               Auto-block       Show ✅ message
-               + log action
+```xml
+<localfile>
+  <log_format>json</log_format>
+  <location>/path/to/malicious-website-blocker/logs/siem_events.json</location>
+</localfile>
 ```
 
-**Hosts file blocking** works by redirecting the domain to `127.0.0.1` (your own machine), so the browser can never reach the real server.
+Example custom Wazuh rule (`/var/ossec/etc/rules/local_rules.xml`):
 
-| OS | Hosts File Location |
-|---|---|
-| Windows | `C:\Windows\System32\drivers\etc\hosts` |
-| macOS | `/etc/hosts` |
-| Linux | `/etc/hosts` |
-
----
-
-## 📝 Logging
-
-Every action is automatically recorded to **`log.txt`** in the same directory as the script.
-
-Example log entries:
+```xml
+<group name="threat_intel,malicious_blocker,">
+  <rule id="100501" level="10">
+    <decoded_as>json</decoded_as>
+    <field name="event.action">threat_detected</field>
+    <description>Malicious Domain Detected by VirusTotal: $(details.domain)</description>
+    <mitre>
+      <id>T1566</id>
+      <id>T1071.001</id>
+    </mitre>
+  </rule>
+</group>
 ```
-[2025-04-26 10:15:32] Blocked: malicious-site.com
-[2025-04-26 10:18:45] Auto-blocked: phishing-example.com due to VirusTotal verdict (malicious:3, suspicious:1)
-[2025-04-26 10:22:10] Unblocked: malicious-site.com
+
+### 3. Splunk Universal Forwarder / CEF Ingest
+
+In `inputs.conf`:
+```ini
+[monitor:///path/to/malicious-website-blocker/logs/siem_events.log]
+sourcetype = cef
+index = security_alerts
+```
+
+Or configure direct UDP Syslog forwarding in `.env`:
+```env
+SIEM_SYSLOG_HOST=192.168.1.50
+SIEM_SYSLOG_PORT=514
+SIEM_SYSLOG_PROTOCOL=UDP
 ```
 
 ---
 
-## ⚠️ Limitations & Notes
+## 📜 Sample SIEM Event Logs
 
-- **Admin rights are mandatory.** The hosts file is a protected system file. Without elevated privileges, all write operations will fail.
-- **Browser caching**: After blocking a site, you may need to clear your browser's DNS cache or restart the browser for the block to take effect.
-- **DNS cache flush** (recommended after blocking):
-  - Windows: `ipconfig /flushdns`
-  - macOS: `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder`
-  - Linux: `sudo systemd-resolve --flush-caches`
-- **VirusTotal free tier** is limited to 4 requests/minute. Scanning too many URLs rapidly may result in API errors.
-- The VirusTotal scan polls up to **5 times with 4-second intervals** (~20 seconds total). If the scan doesn't complete in time, a timeout message is shown.
-- This app only blocks sites **at the system level** — it does not inspect HTTPS traffic or act as a firewall.
+### Structured JSON Event (`logs/siem_events.json`):
+```json
+{
+  "@timestamp": "2026-08-19T12:00:00.000000+00:00",
+  "event": {
+    "dataset": "malicious_website_blocker.events",
+    "action": "threat_detected",
+    "category": "threat-intel",
+    "severity": 8,
+    "severity_label": "HIGH"
+  },
+  "details": {
+    "summary": "Malicious domain detected via VirusTotal: phishing-portal.xyz (malicious=14, suspicious=2)",
+    "url": "http://phishing-portal.xyz/login.php",
+    "domain": "phishing-portal.xyz",
+    "malicious_count": 14,
+    "suspicious_count": 2,
+    "harmless_count": 0,
+    "undetected_count": 72,
+    "verdict": "MALICIOUS"
+  }
+}
+```
+
+### ArcSight Common Event Format (`logs/siem_events.log`):
+```text
+CEF:0|SecOpsLab|MaliciousWebsiteBlocker|1.2|THREAT_DETECTED|Malicious domain detected via VirusTotal: phishing-portal.xyz (malicious=14, suspicious=2)|8|rt=1787140800000 cat=THREAT_DETECTED sev=HIGH cs_summary=Malicious domain detected via VirusTotal: phishing-portal.xyz (malicious=14, suspicious=2) cs_url=http://phishing-portal.xyz/login.php cs_domain=phishing-portal.xyz cn_malicious_count=14 cn_suspicious_count=2 cn_harmless_count=0 cn_undetected_count=72 cs_verdict=MALICIOUS
+```
+
+---
+
+## 🔌 REST API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/` | Web SOC Analyst Dashboard UI |
+| `GET` | `/api/status` | Health check, API key status, and blocked domain count |
+| `GET` | `/api/blocklist` | List of all currently blocked domains |
+| `GET` | `/api/blocklist/export` | Download standard hosts / DNS sinkhole blocklist file |
+| `POST` | `/api/scan` | Scan URL with VirusTotal (JSON payload: `{"url": "..."}`) |
+| `POST` | `/api/block` | Manually block domain (JSON payload: `{"url": "...", "reason": "..."}`) |
+| `POST` | `/api/unblock` | Unblock domain (JSON payload: `{"url": "..."}`) |
+| `GET` | `/api/events` | Retrieve recent JSON SIEM security events |
+| `GET` | `/api/events/cef` | Retrieve raw CEF log feed |
+
+---
+
+## 🎯 MITRE ATT&CK Mapping
+
+This project maps directly to common SOC threat detection and defense techniques:
+
+- **T1566 (Phishing)**: Scanning inbound suspicious links in incident response.
+- **T1071.001 (Web Protocols C2)**: Blocking outbound communication to flagged C2 servers.
+- **T1584 (DNS Sinkholing / Hosts Redirection)**: Neutralizing malicious name resolution locally.
+- **T1036 (Masquerading)**: Detecting deceptive typo-squatted domains via VirusTotal reputation.
 
 ---
 
@@ -192,15 +282,13 @@ Example log entries:
 
 | Issue | Solution |
 |---|---|
-| `Permission Error` on block/unblock | Run the script as Administrator (Windows) or with `sudo` (macOS/Linux) |
-| `tkinter` not found | Install via `sudo apt install python3-tk` (Linux) |
-| VirusTotal scan times out | The site may be newly submitted; try again after a moment |
-| `Network/API Error` | Check your internet connection and verify your `VT_API_KEY` is correct |
-| Blocked site still loads in browser | Flush DNS cache and restart the browser |
-| Site not appearing in blocked list | Ensure the URL entered matches the previously blocked domain exactly |
+| `VirusTotal API key is not configured` | Set `VT_API_KEY` in `.env` file or environment variables. |
+| `VirusTotal rate limit exceeded (HTTP 429)` | Free VT tier allows 4 requests/min. Wait 60 seconds between batches. |
+| `PermissionError modifying hosts file` | On Windows run as Administrator; on Linux use `sudo`; inside Docker use the `/api/blocklist/export` endpoint with a local DNS resolver. |
+| Docker port conflict | Change `PORT=5000` to another port in `.env` (e.g. `PORT=8080`) and restart. |
 
 ---
 
 ## 📄 License
 
-This project is for educational purposes. Use responsibly and only on systems you own or have explicit permission to manage.
+MIT License. Created for student cybersecurity labs, SOC training, and defense research.
