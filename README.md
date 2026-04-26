@@ -15,7 +15,7 @@ Supports both **Docker container deployment** (with Web SOC Dashboard & REST API
 - [Running Desktop GUI Locally](#-running-desktop-gui-locally)
 - [Sample SIEM Event Logs](#-sample-siem-event-logs)
 - [REST API Endpoints](#-rest-api-endpoints)
-- [MITRE ATT&CK Mapping](#-mitre-attck-mapping)
+- [Summary of Protection](#-summary-of-protection)
 - [Troubleshooting](#-troubleshooting)
 
 ---
@@ -192,14 +192,15 @@ CEF:0|SecOpsLab|MaliciousWebsiteBlocker|1.2|THREAT_DETECTED|Malicious domain det
 
 ---
 
-## 🎯 MITRE ATT&CK Mapping
+## 🎯 Summary of Protection
 
-This project maps directly to common SOC threat detection and defense techniques:
+A simple overview of how this tool protects your system:
 
-- **T1566 (Phishing)**: Scanning inbound suspicious links in incident response.
-- **T1071.001 (Web Protocols C2)**: Blocking outbound communication to flagged C2 servers.
-- **T1584 (DNS Sinkholing / Hosts Redirection)**: Neutralizing malicious name resolution locally.
-- **T1036 (Masquerading)**: Detecting deceptive typo-squatted domains via VirusTotal reputation.
+- **Phishing & Scam Links**: Checks suspicious URLs against VirusTotal databases before you visit them.
+- **Malware & Virus Sites**: Instantly blocks known dangerous websites flagged by security vendors.
+- **Fake & Deceptive Domains**: Identifies look-alike or newly created malicious domains.
+- **Local Sinkhole Defense**: Redirects dangerous traffic safely to `127.0.0.1` so no data leaves your machine.
+- **Security Audit Logs**: Records all scan results and block actions for easy monitoring.
 
 ---
 
